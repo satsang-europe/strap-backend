@@ -1,0 +1,54 @@
+{
+  "kind": "collectionType",
+  "collectionName": "app_notifications",
+  "info": {
+    "singularName": "app-notification",
+    "pluralName": "app-notifications",
+    "displayName": "App Notification",
+    "description": "Notifications published to the Satsang Europe mobile app"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "title": {
+      "type": "string",
+      "required": true,
+      "maxLength": 100
+    },
+    "pushMessage": {
+      "type": "text",
+      "required": true,
+      "maxLength": 200
+    },
+    "body": {
+      "type": "blocks"
+    },
+    "coverImage": {
+      "type": "media",
+      "multiple": false,
+      "required": false,
+      "allowedTypes": [
+        "images"
+      ]
+    },
+    "gallery": {
+      "type": "media",
+      "multiple": true,
+      "required": false,
+      "allowedTypes": [
+        "images"
+      ]
+    },
+    "sentAt": {
+      "type": "datetime"
+    },
+    "expiresAt": {
+      "type": "datetime"
+    },
+    "pushSentAt": {
+      "type": "datetime"
+    }
+  }
+}
