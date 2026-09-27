@@ -631,6 +631,81 @@ export interface ApiPublicationPublication extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiPushDeliveryPushDelivery
+  extends Struct.CollectionTypeSchema {
+  collectionName: 'push_deliveries';
+  info: {
+    description: 'Private delivery state for mobile push notifications';
+    displayName: 'Push Delivery';
+    pluralName: 'push-deliveries';
+    singularName: 'push-delivery';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  pluginOptions: {
+    'content-manager': {
+      visible: false;
+    };
+    'content-type-builder': {
+      visible: false;
+    };
+  };
+  attributes: {
+    activeAt: Schema.Attribute.DateTime &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private;
+    attempts: Schema.Attribute.Integer &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    deliveryKey: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private &
+      Schema.Attribute.Unique;
+    lastError: Schema.Attribute.Text & Schema.Attribute.Private;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::push-delivery.push-delivery'
+    > &
+      Schema.Attribute.Private;
+    nextAttemptAt: Schema.Attribute.DateTime & Schema.Attribute.Private;
+    notificationDocumentId: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private;
+    processingStartedAt: Schema.Attribute.DateTime & Schema.Attribute.Private;
+    publishedAt: Schema.Attribute.DateTime;
+    pushMessage: Schema.Attribute.Text &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private;
+    sentAt: Schema.Attribute.DateTime & Schema.Attribute.Private;
+    status: Schema.Attribute.Enumeration<
+      ['pending', 'processing', 'sent', 'partial', 'failed', 'expired']
+    > &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private &
+      Schema.Attribute.DefaultTo<'pending'>;
+    ticketErrors: Schema.Attribute.JSON & Schema.Attribute.Private;
+    ticketIds: Schema.Attribute.JSON & Schema.Attribute.Private;
+    title: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
 export interface ApiPushSubscriptionPushSubscription
   extends Struct.CollectionTypeSchema {
   collectionName: 'push_subscriptions';
@@ -1264,6 +1339,7 @@ declare module '@strapi/strapi' {
       'api::foodservice.foodservice': ApiFoodserviceFoodservice;
       'api::legal-document.legal-document': ApiLegalDocumentLegalDocument;
       'api::publication.publication': ApiPublicationPublication;
+      'api::push-delivery.push-delivery': ApiPushDeliveryPushDelivery;
       'api::push-subscription.push-subscription': ApiPushSubscriptionPushSubscription;
       'api::seminar.seminar': ApiSeminarSeminar;
       'api::upcoming-event.upcoming-event': ApiUpcomingEventUpcomingEvent;

@@ -1,5 +1,35 @@
 # 🚀 Getting started with Strapi
 
+## Mobile push delivery
+
+Publishing an `App Notification` creates one private `Push Delivery` record. The
+delivery key combines the notification document ID and activation time, which
+prevents the same publication from being queued twice.
+Republishing a future notification updates its still-pending title and message
+without creating another delivery.
+
+The worker runs after publication, at server startup, and once per minute. It:
+
+- sends to enabled anonymous subscriptions in Expo batches of at most 100;
+- includes `notificationDocumentId` so a tap opens the matching app detail;
+- stores Expo ticket IDs for later receipt checks;
+- disables subscriptions rejected immediately as `DeviceNotRegistered`;
+- retries temporary request failures up to five times with increasing delays;
+- resumes stale work after a restart and never sends after the 72-hour window;
+- preserves progress between batches so a retry does not resend completed batches.
+
+`EXPO_ACCESS_TOKEN` is optional. Set it in the hosting environment only if Expo
+Push Service access-token security is enabled for the EAS project. Never commit
+the token.
+
+Future-dated notifications are queued at publication and become eligible at
+`scheduledFor`. The in-process worker can only run while the Render web service
+is awake. Exact unattended scheduling on a sleeping free instance will require
+an external authenticated wake-up/worker mechanism in a later increment.
+
+Expo ticket submission is implemented. Receipt polling and receipt-level invalid
+token cleanup are the next backend increment.
+
 Strapi comes with a full featured [Command Line Interface](https://docs.strapi.io/dev-docs/cli) (CLI) which lets you scaffold and manage your project in seconds.
 
 ### `develop`

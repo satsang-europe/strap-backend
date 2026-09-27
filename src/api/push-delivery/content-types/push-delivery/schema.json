@@ -1,0 +1,94 @@
+{
+  "kind": "collectionType",
+  "collectionName": "push_deliveries",
+  "info": {
+    "singularName": "push-delivery",
+    "pluralName": "push-deliveries",
+    "displayName": "Push Delivery",
+    "description": "Private delivery state for mobile push notifications"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {
+    "content-manager": {
+      "visible": false
+    },
+    "content-type-builder": {
+      "visible": false
+    }
+  },
+  "attributes": {
+    "deliveryKey": {
+      "type": "string",
+      "required": true,
+      "unique": true,
+      "private": true
+    },
+    "notificationDocumentId": {
+      "type": "string",
+      "required": true,
+      "private": true
+    },
+    "title": {
+      "type": "string",
+      "required": true,
+      "private": true
+    },
+    "pushMessage": {
+      "type": "text",
+      "required": true,
+      "private": true
+    },
+    "activeAt": {
+      "type": "datetime",
+      "required": true,
+      "private": true
+    },
+    "status": {
+      "type": "enumeration",
+      "enum": [
+        "pending",
+        "processing",
+        "sent",
+        "partial",
+        "failed",
+        "expired"
+      ],
+      "required": true,
+      "default": "pending",
+      "private": true
+    },
+    "attempts": {
+      "type": "integer",
+      "required": true,
+      "default": 0,
+      "min": 0,
+      "private": true
+    },
+    "nextAttemptAt": {
+      "type": "datetime",
+      "private": true
+    },
+    "processingStartedAt": {
+      "type": "datetime",
+      "private": true
+    },
+    "sentAt": {
+      "type": "datetime",
+      "private": true
+    },
+    "ticketIds": {
+      "type": "json",
+      "private": true
+    },
+    "ticketErrors": {
+      "type": "json",
+      "private": true
+    },
+    "lastError": {
+      "type": "text",
+      "private": true
+    }
+  }
+}
