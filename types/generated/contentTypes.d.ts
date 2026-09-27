@@ -631,6 +631,53 @@ export interface ApiPublicationPublication extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiPushSubscriptionPushSubscription
+  extends Struct.CollectionTypeSchema {
+  collectionName: 'push_subscriptions';
+  info: {
+    description: 'Anonymous mobile push-delivery subscriptions';
+    displayName: 'Push Subscription';
+    pluralName: 'push-subscriptions';
+    singularName: 'push-subscription';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  pluginOptions: {
+    'content-manager': {
+      visible: false;
+    };
+    'content-type-builder': {
+      visible: false;
+    };
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    enabled: Schema.Attribute.Boolean &
+      Schema.Attribute.Required &
+      Schema.Attribute.DefaultTo<true>;
+    lastSeenAt: Schema.Attribute.DateTime & Schema.Attribute.Required;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::push-subscription.push-subscription'
+    > &
+      Schema.Attribute.Private;
+    platform: Schema.Attribute.Enumeration<['ios', 'android']> &
+      Schema.Attribute.Required;
+    publishedAt: Schema.Attribute.DateTime;
+    token: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private &
+      Schema.Attribute.Unique;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
 export interface ApiSeminarSeminar extends Struct.CollectionTypeSchema {
   collectionName: 'seminars';
   info: {
@@ -1217,6 +1264,7 @@ declare module '@strapi/strapi' {
       'api::foodservice.foodservice': ApiFoodserviceFoodservice;
       'api::legal-document.legal-document': ApiLegalDocumentLegalDocument;
       'api::publication.publication': ApiPublicationPublication;
+      'api::push-subscription.push-subscription': ApiPushSubscriptionPushSubscription;
       'api::seminar.seminar': ApiSeminarSeminar;
       'api::upcoming-event.upcoming-event': ApiUpcomingEventUpcomingEvent;
       'plugin::content-releases.release': PluginContentReleasesRelease;

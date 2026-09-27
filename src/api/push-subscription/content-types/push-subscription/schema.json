@@ -1,0 +1,46 @@
+{
+  "kind": "collectionType",
+  "collectionName": "push_subscriptions",
+  "info": {
+    "singularName": "push-subscription",
+    "pluralName": "push-subscriptions",
+    "displayName": "Push Subscription",
+    "description": "Anonymous mobile push-delivery subscriptions"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {
+    "content-manager": {
+      "visible": false
+    },
+    "content-type-builder": {
+      "visible": false
+    }
+  },
+  "attributes": {
+    "token": {
+      "type": "string",
+      "required": true,
+      "unique": true,
+      "private": true
+    },
+    "platform": {
+      "type": "enumeration",
+      "enum": [
+        "ios",
+        "android"
+      ],
+      "required": true
+    },
+    "enabled": {
+      "type": "boolean",
+      "required": true,
+      "default": true
+    },
+    "lastSeenAt": {
+      "type": "datetime",
+      "required": true
+    }
+  }
+}
