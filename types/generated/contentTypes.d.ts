@@ -448,7 +448,6 @@ export interface ApiAppNotificationAppNotification
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
-    expiresAt: Schema.Attribute.DateTime;
     gallery: Schema.Attribute.Media<'images', true>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<
@@ -462,8 +461,7 @@ export interface ApiAppNotificationAppNotification
       Schema.Attribute.SetMinMaxLength<{
         maxLength: 200;
       }>;
-    pushSentAt: Schema.Attribute.DateTime;
-    sentAt: Schema.Attribute.DateTime;
+    scheduledFor: Schema.Attribute.DateTime;
     title: Schema.Attribute.String &
       Schema.Attribute.Required &
       Schema.Attribute.SetMinMaxLength<{

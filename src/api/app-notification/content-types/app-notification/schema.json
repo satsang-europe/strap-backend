@@ -41,13 +41,7 @@
         "images"
       ]
     },
-    "sentAt": {
-      "type": "datetime"
-    },
-    "expiresAt": {
-      "type": "datetime"
-    },
-    "pushSentAt": {
+    "scheduledFor": {
       "type": "datetime"
     }
   }
