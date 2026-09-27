@@ -101,6 +101,7 @@ type ReceiptSummary = {
 };
 
 let workerRunning = false;
+let receiptReconciliationLogged = false;
 
 const query = (strapi: Core.Strapi, uid: string) =>
   strapi.db.query(uid as never) as any;
@@ -534,15 +535,19 @@ const initializeReceiptPollingForRecentDeliveries = async (
     limit: 500,
     orderBy: { sentAt: 'desc' },
     where: {
-      receiptStatus: 'not_required',
       sentAt: {
         $gt: new Date(Date.now() - RECEIPT_MAX_AGE_MS).toISOString(),
       },
       status: { $in: ['sent', 'partial'] },
     },
   })) as PushDelivery[];
+  const candidates = recentDeliveries.filter(
+    (delivery) =>
+      !delivery.receiptStatus || delivery.receiptStatus === 'not_required'
+  );
+  let scheduledCount = 0;
 
-  for (const delivery of recentDeliveries) {
+  for (const delivery of candidates) {
     if (!Array.isArray(delivery.ticketIds) || delivery.ticketIds.length === 0) {
       continue;
     }
@@ -561,6 +566,24 @@ const initializeReceiptPollingForRecentDeliveries = async (
       },
       where: { id: delivery.id },
     });
+    scheduledCount += 1;
+  }
+
+  if (!receiptReconciliationLogged) {
+    const states = Object.entries(
+      recentDeliveries.reduce<Record<string, number>>((counts, delivery) => {
+        const status = delivery.receiptStatus || 'legacy';
+        counts[status] = (counts[status] ?? 0) + 1;
+        return counts;
+      }, {})
+    )
+      .map(([status, count]) => `${status}:${count}`)
+      .join(', ');
+
+    strapi.log.info(
+      `[push-delivery] Receipt reconciliation inspected ${recentDeliveries.length} recent delivery record(s); scheduled ${scheduledCount}; states ${states || 'none'}`
+    );
+    receiptReconciliationLogged = true;
   }
 };
 
