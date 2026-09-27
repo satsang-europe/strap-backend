@@ -5,13 +5,19 @@ const PUSH_DELIVERY_UID = 'api::push-delivery.push-delivery';
 const PUSH_SUBSCRIPTION_UID = 'api::push-subscription.push-subscription';
 
 const EXPO_SEND_URL = 'https://exp.host/--/api/v2/push/send';
+const EXPO_RECEIPTS_URL = 'https://exp.host/--/api/v2/push/getReceipts';
 const EXPO_BATCH_SIZE = 100;
+const EXPO_RECEIPT_BATCH_SIZE = 1000;
 const SUBSCRIPTION_PAGE_SIZE = 500;
 const DELIVERY_BATCH_SIZE = 10;
+const RECEIPT_DELIVERY_BATCH_SIZE = 10;
 const MAX_ATTEMPTS = 5;
 const STALE_PROCESSING_MS = 10 * 60 * 1000;
 const NOTIFICATION_LIFETIME_SECONDS = 72 * 60 * 60;
 const NOTIFICATION_LIFETIME_MS = NOTIFICATION_LIFETIME_SECONDS * 1000;
+const RECEIPT_INITIAL_DELAY_MS = 15 * 60 * 1000;
+const RECEIPT_RETRY_DELAY_MS = 15 * 60 * 1000;
+const RECEIPT_MAX_AGE_MS = 23 * 60 * 60 * 1000;
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000];
 
 type DateTimeValue = string | Date | null | undefined;
@@ -31,6 +37,10 @@ type PushDelivery = {
   pushMessage: string;
   activeAt: string;
   attempts?: number;
+  receiptAttempts?: number;
+  receiptResults?: StoredReceipt[] | null;
+  receiptStatus?: string;
+  sentAt?: string | null;
   ticketErrors?: StoredTicketError[] | null;
   ticketIds?: StoredTicket[] | null;
 };
@@ -52,6 +62,17 @@ type ExpoPushResponse = {
   errors?: Array<{ code?: string; message?: string }>;
 };
 
+type ExpoPushReceipt = {
+  status: 'ok' | 'error';
+  message?: string;
+  details?: { error?: string };
+};
+
+type ExpoReceiptResponse = {
+  data?: Record<string, ExpoPushReceipt>;
+  errors?: Array<{ code?: string; message?: string }>;
+};
+
 type StoredTicket = {
   id: string;
   token: string;
@@ -61,6 +82,22 @@ type StoredTicketError = {
   error: string | null;
   message: string;
   token: string;
+};
+
+type StoredReceipt = {
+  error: string | null;
+  id: string;
+  message: string | null;
+  status: 'ok' | 'error';
+  token: string;
+};
+
+type ReceiptSummary = {
+  checkedAt: string;
+  failed: number;
+  successful: number;
+  ticketRejected: number;
+  unavailable: number;
 };
 
 let workerRunning = false;
@@ -84,6 +121,21 @@ const chunk = <T>(items: T[], size: number) => {
   return chunks;
 };
 
+const buildReceiptSummary = (
+  delivery: PushDelivery,
+  receiptResults: StoredReceipt[],
+  unavailable: number,
+  checkedAt: string
+): ReceiptSummary => ({
+  checkedAt,
+  failed: receiptResults.filter((receipt) => receipt.status === 'error').length,
+  successful: receiptResults.filter((receipt) => receipt.status === 'ok').length,
+  ticketRejected: Array.isArray(delivery.ticketErrors)
+    ? delivery.ticketErrors.length
+    : 0,
+  unavailable,
+});
+
 const getExpoHeaders = () => {
   const headers: Record<string, string> = {
     Accept: 'application/json',
@@ -102,6 +154,13 @@ const disableSubscription = async (strapi: Core.Strapi, subscriptionId: number) 
   await query(strapi, PUSH_SUBSCRIPTION_UID).update({
     data: { enabled: false },
     where: { id: subscriptionId },
+  });
+};
+
+const disableSubscriptionByToken = async (strapi: Core.Strapi, token: string) => {
+  await query(strapi, PUSH_SUBSCRIPTION_UID).updateMany({
+    data: { enabled: false },
+    where: { enabled: true, token },
   });
 };
 
@@ -204,18 +263,48 @@ const sendDelivery = async (strapi: Core.Strapi, delivery: PushDelivery) => {
     }
 
     await query(strapi, PUSH_DELIVERY_UID).update({
-      data: { ticketErrors, ticketIds: tickets },
+      data: {
+        nextReceiptCheckAt:
+          tickets.length > 0
+            ? new Date(Date.now() + RECEIPT_INITIAL_DELAY_MS).toISOString()
+            : null,
+        receiptAttempts: 0,
+        receiptLastError: null,
+        receiptResults: [],
+        receiptStatus: tickets.length > 0 ? 'pending' : 'not_required',
+        ticketErrors,
+        ticketIds: tickets,
+      },
       where: { id: delivery.id },
     });
   }
 
+  const sentAt = new Date().toISOString();
+  const receiptSummary =
+    tickets.length === 0
+      ? buildReceiptSummary(
+          { ...delivery, ticketErrors },
+          [],
+          0,
+          sentAt
+        )
+      : null;
   await query(strapi, PUSH_DELIVERY_UID).update({
     data: {
       lastError: null,
+      nextReceiptCheckAt:
+        tickets.length > 0
+          ? new Date(Date.now() + RECEIPT_INITIAL_DELAY_MS).toISOString()
+          : null,
       processingStartedAt: null,
-      sentAt: new Date().toISOString(),
+      receiptAttempts: 0,
+      receiptLastError: null,
+      receiptResults: [],
+      receiptStatus: tickets.length > 0 ? 'pending' : 'not_required',
+      receiptSummary,
+      sentAt,
       status: ticketErrors.length > 0 ? 'partial' : 'sent',
-      ticketErrors,
+      ticketErrors: tickets.length > 0 ? ticketErrors : [],
       ticketIds: tickets,
     },
     where: { id: delivery.id },
@@ -223,6 +312,158 @@ const sendDelivery = async (strapi: Core.Strapi, delivery: PushDelivery) => {
 
   strapi.log.info(
     `[push-delivery] Sent ${tickets.length} push notification(s) for ${delivery.notificationDocumentId}; ${ticketErrors.length} rejected`
+  );
+};
+
+const markReceiptCheckForRetry = async (
+  strapi: Core.Strapi,
+  delivery: PushDelivery,
+  error: unknown
+) => {
+  const attempts = (delivery.receiptAttempts ?? 0) + 1;
+  const sentAt = new Date(delivery.sentAt ?? '').getTime();
+  const deadlinePassed =
+    !Number.isFinite(sentAt) || sentAt + RECEIPT_MAX_AGE_MS <= Date.now();
+  const message = error instanceof Error ? error.message : String(error);
+  const receiptResults = Array.isArray(delivery.receiptResults)
+    ? delivery.receiptResults
+    : [];
+  const tickets = Array.isArray(delivery.ticketIds) ? delivery.ticketIds : [];
+  const completedIds = new Set(receiptResults.map((receipt) => receipt.id));
+  const unavailable = tickets.filter((ticket) => !completedIds.has(ticket.id)).length;
+  const checkedAt = new Date().toISOString();
+
+  await query(strapi, PUSH_DELIVERY_UID).update({
+    data: {
+      nextReceiptCheckAt: deadlinePassed
+        ? null
+        : new Date(Date.now() + RECEIPT_RETRY_DELAY_MS).toISOString(),
+      receiptAttempts: attempts,
+      receiptLastError: message.slice(0, 2000),
+      receiptProcessingStartedAt: null,
+      receiptResults: deadlinePassed ? [] : receiptResults,
+      receiptStatus: deadlinePassed
+        ? receiptResults.length > 0
+          ? 'partial'
+          : 'failed'
+        : 'pending',
+      receiptSummary: deadlinePassed
+        ? buildReceiptSummary(delivery, receiptResults, unavailable, checkedAt)
+        : null,
+      ticketErrors: deadlinePassed ? [] : delivery.ticketErrors,
+      ticketIds: deadlinePassed ? [] : tickets,
+      ...(deadlinePassed ? { receiptCheckedAt: checkedAt } : {}),
+    },
+    where: { id: delivery.id },
+  });
+
+  strapi.log.error(
+    `[push-delivery] Receipt check for delivery ${delivery.id} failed on attempt ${attempts}: ${message}`
+  );
+};
+
+const checkDeliveryReceipts = async (
+  strapi: Core.Strapi,
+  delivery: PushDelivery
+) => {
+  const tickets = Array.isArray(delivery.ticketIds) ? delivery.ticketIds : [];
+  const receiptResults: StoredReceipt[] = Array.isArray(delivery.receiptResults)
+    ? [...delivery.receiptResults]
+    : [];
+  const completedIds = new Set(receiptResults.map((receipt) => receipt.id));
+  const pendingTickets = tickets.filter((ticket) => !completedIds.has(ticket.id));
+
+  for (const ticketBatch of chunk(pendingTickets, EXPO_RECEIPT_BATCH_SIZE)) {
+    const response = await fetch(EXPO_RECEIPTS_URL, {
+      body: JSON.stringify({ ids: ticketBatch.map((ticket) => ticket.id) }),
+      headers: getExpoHeaders(),
+      method: 'POST',
+    });
+    const payload = (await response.json().catch(() => ({}))) as ExpoReceiptResponse;
+
+    if (!response.ok) {
+      const details = payload.errors?.map((error) => error.message).filter(Boolean).join('; ');
+      throw new Error(
+        `Expo receipt request failed (${response.status})${details ? `: ${details}` : ''}`
+      );
+    }
+
+    for (const ticket of ticketBatch) {
+      const receipt = payload.data?.[ticket.id];
+
+      if (!receipt) {
+        continue;
+      }
+
+      const error = receipt.details?.error ?? null;
+      receiptResults.push({
+        error,
+        id: ticket.id,
+        message: receipt.message ?? null,
+        status: receipt.status,
+        token: ticket.token,
+      });
+      completedIds.add(ticket.id);
+
+      if (error === 'DeviceNotRegistered') {
+        await disableSubscriptionByToken(strapi, ticket.token);
+      }
+    }
+
+    await query(strapi, PUSH_DELIVERY_UID).update({
+      data: { receiptResults },
+      where: { id: delivery.id },
+    });
+  }
+
+  const checkedAt = new Date().toISOString();
+  const unresolvedCount = tickets.filter((ticket) => !completedIds.has(ticket.id)).length;
+  const hasErrors =
+    receiptResults.some((receipt) => receipt.status === 'error') ||
+    Boolean(delivery.ticketErrors?.length);
+  const sentAt = new Date(delivery.sentAt ?? '').getTime();
+  const deadlinePassed =
+    !Number.isFinite(sentAt) || sentAt + RECEIPT_MAX_AGE_MS <= Date.now();
+  const receiptStatus =
+    unresolvedCount === 0
+      ? hasErrors
+        ? 'partial'
+        : 'complete'
+      : deadlinePassed
+        ? receiptResults.length > 0
+          ? 'partial'
+          : 'failed'
+        : 'pending';
+  const receiptLastError =
+    unresolvedCount > 0 && deadlinePassed
+      ? `${unresolvedCount} Expo push receipt(s) were unavailable before the receipt deadline`
+      : null;
+  const isTerminal = receiptStatus !== 'pending';
+  const receiptSummary = isTerminal
+    ? buildReceiptSummary(delivery, receiptResults, unresolvedCount, checkedAt)
+    : null;
+
+  await query(strapi, PUSH_DELIVERY_UID).update({
+    data: {
+      nextReceiptCheckAt:
+        receiptStatus === 'pending'
+          ? new Date(Date.now() + RECEIPT_RETRY_DELAY_MS).toISOString()
+          : null,
+      receiptAttempts: (delivery.receiptAttempts ?? 0) + 1,
+      receiptCheckedAt: checkedAt,
+      receiptLastError,
+      receiptProcessingStartedAt: null,
+      receiptResults: isTerminal ? [] : receiptResults,
+      receiptStatus,
+      receiptSummary,
+      ticketErrors: isTerminal ? [] : delivery.ticketErrors,
+      ticketIds: isTerminal ? [] : tickets,
+    },
+    where: { id: delivery.id },
+  });
+
+  strapi.log.info(
+    `[push-delivery] Receipt check for ${delivery.notificationDocumentId}: ${receiptResults.length} resolved, ${unresolvedCount} pending`
   );
 };
 
@@ -268,6 +509,94 @@ const recoverStaleDeliveries = async (strapi: Core.Strapi) => {
       status: 'processing',
     },
   });
+};
+
+const recoverStaleReceiptChecks = async (strapi: Core.Strapi) => {
+  await query(strapi, PUSH_DELIVERY_UID).updateMany({
+    data: {
+      nextReceiptCheckAt: new Date().toISOString(),
+      receiptProcessingStartedAt: null,
+      receiptStatus: 'pending',
+    },
+    where: {
+      receiptProcessingStartedAt: {
+        $lt: new Date(Date.now() - STALE_PROCESSING_MS).toISOString(),
+      },
+      receiptStatus: 'checking',
+    },
+  });
+};
+
+const initializeReceiptPollingForRecentDeliveries = async (
+  strapi: Core.Strapi
+) => {
+  const recentDeliveries = (await query(strapi, PUSH_DELIVERY_UID).findMany({
+    limit: 500,
+    orderBy: { sentAt: 'desc' },
+    where: {
+      receiptStatus: 'not_required',
+      sentAt: {
+        $gt: new Date(Date.now() - RECEIPT_MAX_AGE_MS).toISOString(),
+      },
+      status: { $in: ['sent', 'partial'] },
+    },
+  })) as PushDelivery[];
+
+  for (const delivery of recentDeliveries) {
+    if (!Array.isArray(delivery.ticketIds) || delivery.ticketIds.length === 0) {
+      continue;
+    }
+
+    const sentAt = new Date(delivery.sentAt ?? '').getTime();
+    const firstCheckAt = Number.isFinite(sentAt)
+      ? Math.max(Date.now(), sentAt + RECEIPT_INITIAL_DELAY_MS)
+      : Date.now();
+
+    await query(strapi, PUSH_DELIVERY_UID).update({
+      data: {
+        nextReceiptCheckAt: new Date(firstCheckAt).toISOString(),
+        receiptAttempts: 0,
+        receiptResults: [],
+        receiptStatus: 'pending',
+      },
+      where: { id: delivery.id },
+    });
+  }
+};
+
+const processPendingPushReceipts = async (strapi: Core.Strapi) => {
+  await recoverStaleReceiptChecks(strapi);
+  await initializeReceiptPollingForRecentDeliveries(strapi);
+
+  const now = new Date().toISOString();
+  const deliveries = (await query(strapi, PUSH_DELIVERY_UID).findMany({
+    limit: RECEIPT_DELIVERY_BATCH_SIZE,
+    orderBy: [{ nextReceiptCheckAt: 'asc' }, { id: 'asc' }],
+    where: {
+      nextReceiptCheckAt: { $lte: now },
+      receiptStatus: 'pending',
+    },
+  })) as PushDelivery[];
+
+  for (const delivery of deliveries) {
+    const claimed = await query(strapi, PUSH_DELIVERY_UID).updateMany({
+      data: {
+        receiptProcessingStartedAt: new Date().toISOString(),
+        receiptStatus: 'checking',
+      },
+      where: { id: delivery.id, receiptStatus: 'pending' },
+    });
+
+    if (!claimed?.count) {
+      continue;
+    }
+
+    try {
+      await checkDeliveryReceipts(strapi, delivery);
+    } catch (error) {
+      await markReceiptCheckForRetry(strapi, delivery, error);
+    }
+  }
 };
 
 const enqueueActivePublishedNotifications = async (strapi: Core.Strapi) => {
@@ -415,6 +744,8 @@ export const processPendingPushDeliveries = async (strapi: Core.Strapi) => {
         await markDeliveryForRetry(strapi, delivery, error);
       }
     }
+
+    await processPendingPushReceipts(strapi);
   } finally {
     workerRunning = false;
   }

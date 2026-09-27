@@ -12,11 +12,15 @@ The worker runs after publication, at server startup, and once per minute. It:
 
 - sends to enabled anonymous subscriptions in Expo batches of at most 100;
 - includes `notificationDocumentId` so a tap opens the matching app detail;
-- stores Expo ticket IDs for later receipt checks;
+- checks Expo receipts after 15 minutes in batches of at most 1,000;
 - disables subscriptions rejected immediately as `DeviceNotRegistered`;
+- also disables subscriptions reported as `DeviceNotRegistered` by a later receipt;
 - retries temporary request failures up to five times with increasing delays;
+- retries unavailable receipts every 15 minutes within a 23-hour window;
 - resumes stale work after a restart and never sends after the 72-hour window;
-- preserves progress between batches so a retry does not resend completed batches.
+- preserves progress between batches so a retry does not resend completed batches;
+- retains only count-based receipt summaries after checking and removes temporary
+  token-to-ticket mappings.
 
 `EXPO_ACCESS_TOKEN` is optional. Set it in the hosting environment only if Expo
 Push Service access-token security is enabled for the EAS project. Never commit
@@ -27,8 +31,8 @@ Future-dated notifications are queued at publication and become eligible at
 is awake. Exact unattended scheduling on a sleeping free instance will require
 an external authenticated wake-up/worker mechanism in a later increment.
 
-Expo ticket submission is implemented. Receipt polling and receipt-level invalid
-token cleanup are the next backend increment.
+Expo ticket submission, receipt polling, and ticket/receipt-level invalid-token
+cleanup are implemented in the same private worker.
 
 Strapi comes with a full featured [Command Line Interface](https://docs.strapi.io/dev-docs/cli) (CLI) which lets you scaffold and manage your project in seconds.
 

@@ -86,6 +86,51 @@
       "type": "json",
       "private": true
     },
+    "receiptStatus": {
+      "type": "enumeration",
+      "enum": [
+        "not_required",
+        "pending",
+        "checking",
+        "complete",
+        "partial",
+        "failed"
+      ],
+      "required": true,
+      "default": "not_required",
+      "private": true
+    },
+    "receiptAttempts": {
+      "type": "integer",
+      "required": true,
+      "default": 0,
+      "min": 0,
+      "private": true
+    },
+    "nextReceiptCheckAt": {
+      "type": "datetime",
+      "private": true
+    },
+    "receiptProcessingStartedAt": {
+      "type": "datetime",
+      "private": true
+    },
+    "receiptCheckedAt": {
+      "type": "datetime",
+      "private": true
+    },
+    "receiptResults": {
+      "type": "json",
+      "private": true
+    },
+    "receiptSummary": {
+      "type": "json",
+      "private": true
+    },
+    "receiptLastError": {
+      "type": "text",
+      "private": true
+    },
     "lastError": {
       "type": "text",
       "private": true

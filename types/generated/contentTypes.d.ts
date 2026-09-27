@@ -680,6 +680,7 @@ export interface ApiPushDeliveryPushDelivery
     > &
       Schema.Attribute.Private;
     nextAttemptAt: Schema.Attribute.DateTime & Schema.Attribute.Private;
+    nextReceiptCheckAt: Schema.Attribute.DateTime & Schema.Attribute.Private;
     notificationDocumentId: Schema.Attribute.String &
       Schema.Attribute.Required &
       Schema.Attribute.Private;
@@ -688,6 +689,28 @@ export interface ApiPushDeliveryPushDelivery
     pushMessage: Schema.Attribute.Text &
       Schema.Attribute.Required &
       Schema.Attribute.Private;
+    receiptAttempts: Schema.Attribute.Integer &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    receiptCheckedAt: Schema.Attribute.DateTime & Schema.Attribute.Private;
+    receiptLastError: Schema.Attribute.Text & Schema.Attribute.Private;
+    receiptProcessingStartedAt: Schema.Attribute.DateTime &
+      Schema.Attribute.Private;
+    receiptResults: Schema.Attribute.JSON & Schema.Attribute.Private;
+    receiptStatus: Schema.Attribute.Enumeration<
+      ['not_required', 'pending', 'checking', 'complete', 'partial', 'failed']
+    > &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private &
+      Schema.Attribute.DefaultTo<'not_required'>;
+    receiptSummary: Schema.Attribute.JSON & Schema.Attribute.Private;
     sentAt: Schema.Attribute.DateTime & Schema.Attribute.Private;
     status: Schema.Attribute.Enumeration<
       ['pending', 'processing', 'sent', 'partial', 'failed', 'expired']
